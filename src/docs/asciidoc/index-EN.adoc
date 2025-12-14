@@ -1,0 +1,207 @@
+= Offer Service (offer-service)
+:doctype: book
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: highlightjs
+:icons: font
+
+== Overview
+
+The *Offer Service* is a Spring Boot microservice that **creates and manages insurance offers**.
+
+* Persists offers in **PostgreSQL**
+* Calls an external **calculator-service** to calculate the insurance price and factors (km / vehicle type / region)
+* Exposes REST endpoints to create and fetch offers
+
+== Quick Start
+
+=== Run the service
+
+[source,bash]
+----
+./gradlew bootRun
+----
+
+The service is available at:
+
+* http://localhost:8181
+
+=== Required dependencies
+
+* Running PostgreSQL on localhost
+* Running `calculator-service` at `http://localhost:8282`
+
+== Configuration (application.properties)
+
+Key properties:
+
+[source,properties]
+----
+spring.application.name=offer-service
+server.port=8181
+
+calculator-service.base-url=http://localhost:8282
+
+spring.datasource.url=jdbc:postgresql://localhost:5432/insurance_offers
+spring.datasource.username=postgres
+spring.datasource.password=toortoor
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+----
+
+[IMPORTANT]
+====
+Ensure the `insurance_offers` database exists and credentials are correct before starting the service.
+====
+
+== Overview
+
+=== Main Components
+
+* *Starter*
+** `OfferServiceApplication` – Spring Boot entry point.
+
+* *HTTP Client*
+** `CalculatorClient` – Spring HTTP Interface client to `calculator-service` (`POST /api/v1/price/calculate`).
+** `AppConfig` – configures `WebClient` and creates the `CalculatorClient` proxy.
+
+* *REST*
+** `OfferController` / `OfferControllerImpl`
+*** Base path: `/api/v1/offers`
+*** Endpoints:
+**** `POST /create` – create a new offer
+**** `GET /{id}` – get one offer by public id
+**** `GET /all` – list all offers
+
+* *Services*
+** `OfferService` / `OfferServiceImpl`
+*** Coordinates persistence and calls to `calculator-service`
+*** Applies auto-expiration of offers
+
+* *Persistence*
+** Entities:
+*** `NewOfferRequestEntity` – stores original request (km, vehicle type, postcode)
+*** `OfferEntity` – stores price, factors, status, expiry
+** Repositories:
+*** `OfferRequestRepository` – JPA repository for requests
+*** `OfferRepository` – JPA repository for offers + `findByPublicId(Long)`
+
+* *Error Handling*
+** `GlobalExceptionHandler` – centralized error responses
+** `ErrorResponse` – common error payload
+** `OfferNotFoundException` – thrown when an offer cannot be found by public id
+
+== WEB API Overview
+
+Base path:
+
+* `/api/v1/offers`
+
+=== Create Offer
+
+*Method*: `POST` +
+*Path*: `/api/v1/offers/create`
+
+==== Example Request Body Data
+
+[source,json]
+----
+{
+  "kilometers": 12000,
+  "vehicleType": "PKW",
+  "postcode": "10115"
+}
+----
+
+=== Get Offer by public id
+
+*Method*: `GET` +
+*Path*: `/api/v1/offers/{id}`
+
+* Behavior:
+** Loads the offer by `offerId` (public id).
+** If the offer is `CREATED` and already expired, its status is automatically updated to `EXPIRED`.
+
+Example:
+
+[source,bash]
+----
+curl "http://localhost:8181/api/v1/offers/1"
+----
+
+=== Get All Offers
+
+*Method*: `GET` +
+*Path*: `/api/v1/offers/all`
+
+* Returns:
+** Array of `NewOfferResponseDto`
+** Auto-expiration applied to each offer
+
+Example:
+
+[source,bash]
+----
+curl "http://localhost:8181/api/v1/offers/all"
+----
+
+== Error Handling
+
+All errors are returned as an `ErrorResponse`:
+
+* `timestamp`
+* `status`
+* `error`
+* `message`
+* `path`
+* optional `validationErrors` (map of field → message)
+
+== Documentation Generation (AsciiDoc)
+
+This documentation is generated with the Asciidoctor Gradle plugin.
+
+=== Gradle configuration
+
+In `build.gradle` make sure to add this:
+
+[source,gradle]
+----
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.3.4'
+    id 'io.spring.dependency-management' version '1.1.7'
+    id 'org.asciidoctor.jvm.convert' version '4.0.5'
+}
+
+asciidoctor {
+    sources {
+        include 'index.adoc'
+    }
+    baseDirFollowsSourceDir()
+}
+----
+
+=== Manually create the File index.adoc in the project here:
+
+[source,text]
+----
+src/docs/asciidoc/index.adoc   # this file
+----
+
+=== To generate HTML docs run:
+
+[source,bash]
+----
+./gradlew asciidoctor
+----
+
+The generated documentation will be available at:
+
+[source,text]
+----
+build/docs/asciidoc/index.html
+----
+
+Open the static `build/docs/asciidoc/index.html` in a browser by double click and read the documentation.

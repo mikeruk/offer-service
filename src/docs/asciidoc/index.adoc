@@ -1,0 +1,207 @@
+= Angebotsservice (offer-service)
+:doctype: book
+:toc: left
+:toclevels: 2
+:sectnums:
+:source-highlighter: highlightjs
+:icons: font
+
+== Übersicht
+
+Der *Angebotsservice* ist ein Spring Boot-Mikroservice, der **Versicherungsangebote erstellt und verwaltet**.
+
+* Speichert Angebote in **PostgreSQL**
+* Ruft einen externen **Rechnerdienst** auf, um den Versicherungsbeitrag und Faktoren (km / Fahrzeugtyp / Region) zu berechnen
+* Stellt REST-Endpunkte zum Erstellen und Abrufen von Angeboten bereit
+
+== Schnellstart
+
+=== Dienst ausführen
+
+[source,bash]
+----
+./gradlew bootRun
+----
+
+Der Dienst ist verfügbar unter:
+
+* http://localhost:8181
+
+=== Erforderliche Abhängigkeiten
+
+* PostgreSQL auf localhost ausführen
+* `calculator-service` unter `http://localhost:8282` ausführen
+
+== Konfiguration (application.properties)
+
+Wichtige Eigenschaften:
+
+[source,properties]
+----
+spring.application.name=offer-service
+server.port=8181
+
+calculator-service.base-url=http://localhost:8282
+
+spring.datasource.url=jdbc:postgresql://localhost:5432/insurance_offers
+spring.datasource.username=postgres
+spring.datasource.password=toortoor
+
+spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.dialect=org.hibernate.dialect.PostgreSQLDialect
+----
+
+[WICHTIG]
+====
+Stellen Sie sicher, dass die Datenbank „insurance_offers” vorhanden ist und die Anmeldedaten korrekt sind, bevor Sie den Dienst starten.
+====
+
+== Übersicht
+
+=== Hauptkomponenten
+
+* *Starter*
+** `OfferServiceApplication` – Spring Boot-Einstiegspunkt.
+
+* *HTTP-Client*
+** `CalculatorClient` – Spring-HTTP-Schnittstellen-Client für `calculator-service` (`POST /api/v1/price/calculate`).
+** `AppConfig` – konfiguriert `WebClient` und erstellt den `CalculatorClient`-Proxy.
+
+* *REST*
+** `OfferController` / `OfferControllerImpl`
+*** Basispfad: `/api/v1/offers`
+*** Endpunkte:
+**** `POST /create` – Erstellt ein neues Angebot.
+**** `GET /{id}` – Ruft ein Angebot anhand der öffentlichen ID ab.
+**** `GET /all` – Listet alle Angebote auf.
+
+* *Dienste*
+** `OfferService` / `OfferServiceImpl`
+*** Koordiniert die Persistenz und Aufrufe an `calculator-service`
+*** Wendet die automatische Ablaufzeit von Angeboten an
+
+* *Persistenz*
+** Entitäten:
+*** `NewOfferRequestEntity` – speichert die ursprüngliche Anfrage (km, Fahrzeugtyp, Postleitzahl)
+*** `OfferEntity` – speichert Preis, Faktoren, Status, Ablaufdatum
+** Repositorys:
+*** `OfferRequestRepository` – JPA-Repository für Anfragen
+*** `OfferRepository` – JPA-Repository für Angebote + `findByPublicId(Long)`
+
+* *Fehlerbehandlung*
+** `GlobalExceptionHandler` – zentralisierte Fehlerantworten
+** `ErrorResponse` – allgemeine Fehler-Nutzlast
+** `OfferNotFoundException` – wird ausgelöst, wenn ein Angebot anhand der öffentlichen ID nicht gefunden werden kann
+
+== WEB-API-Übersicht
+
+Basispfad:
+
+* `/api/v1/offers`
+
+=== Angebot erstellen
+
+*Methode*: `POST` +
+*Pfad*: `/api/v1/offers/create`
+
+==== Beispiel für Request-Body-Daten
+
+[source,json]
+----
+{
+  „kilometers“: 12000,
+  „vehicleType“: „PKW“,
+  „postcode“: „10115“
+}
+----
+
+=== Angebot anhand der öffentlichen ID abrufen
+
+*Methode*: `GET` +
+*Pfad*: `/api/v1/offers/{id}`
+
+* Verhalten:
+** Lädt das Angebot anhand der `offerId` (öffentliche ID).
+** Wenn das Angebot den Status `CREATED` hat und bereits abgelaufen ist, wird sein Status automatisch auf `EXPIRED` aktualisiert.
+
+Beispiel:
+
+[Quelle, Bash]
+----
+curl „http://localhost:8181/api/v1/offers/1“
+----
+
+=== Alle Angebote abrufen
+
+*Methode*: „GET“ +
+*Pfad*: „/api/v1/offers/all“
+
+* Rückgabe:
+** Array von `NewOfferResponseDto`
+** Automatische Ablaufzeit für jedes Angebot
+
+Beispiel:
+
+[source,bash]
+----
+curl „http://localhost:8181/api/v1/offers/all“
+----
+
+== Fehlerbehandlung
+
+Alle Fehler werden als `ErrorResponse` zurückgegeben:
+
+* `timestamp`
+* `status`
+* `error`
+* `message`
+* `path`
+* optional `validationErrors` (Zuordnung von Feld → Meldung)
+
+== Dokumentationserstellung (AsciiDoc)
+
+Diese Dokumentation wird mit dem Asciidoctor Gradle-Plugin erstellt.
+
+=== Gradle-Konfiguration
+
+Fügen Sie in `build.gradle` Folgendes hinzu:
+
+[source,gradle]
+----
+plugins {
+    id ‚java‘
+    id ‚org.springframework.boot‘ version ‚3.3.4‘
+    id ‚io.spring.dependency-management‘ version ‚1.1.7‘
+    id ‚org.asciidoctor.jvm.convert‘ version ‚4.0.5‘
+}
+
+asciidoctor {
+    sources {
+        include ‚index.adoc‘
+    }
+    baseDirFollowsSourceDir()
+}
+----
+
+=== Erstellen Sie hier manuell die Datei index.adoc im Projekt:
+
+[source,text]
+----
+src/docs/asciidoc/index.adoc   # diese Datei
+----
+
+=== Um HTML-Dokumente zu generieren, führen Sie Folgendes aus:
+
+[source,bash]
+----
+./gradlew asciidoctor
+----
+
+Die generierte Dokumentation ist verfügbar unter:
+
+[Quelle,Text]
+----
+build/docs/asciidoc/index.html
+----
+
+Öffnen Sie die statische Datei `build/docs/asciidoc/index.html` in einem Browser durch Doppelklick und lesen Sie die Dokumentation.
