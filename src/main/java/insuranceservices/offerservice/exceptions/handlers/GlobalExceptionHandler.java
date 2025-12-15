@@ -80,7 +80,7 @@ public class GlobalExceptionHandler {
         error.setTimestamp(LocalDateTime.now());
         error.setStatus(HttpStatus.INTERNAL_SERVER_ERROR.value());
         error.setError("Internal server error");
-        error.setMessage("An unexpected error occurred: " + ex.getMessage());
+        error.setMessage("An unexpected error occurred");
         error.setPath(request.getRequestURI());
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(error);
